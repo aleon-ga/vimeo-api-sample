@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const { errorHandler } = require('./src/helpers');
 
 // App init
 const app = express();
@@ -9,28 +10,14 @@ const app = express();
 app.use([
     cors(),
     express.json(),
-    express.urlencoded({ extended: false })
+    express.urlencoded({ extended: true })
 ]);
 
 // Routes
-app.get('/health-check', (req, res) => {
-
-    res.status(200).json({ message: 'Alive!' });
-
-});
+app.use('/api/v1', require('./src/routes/vimeo'));
 
 // Default error handler
-app.use((err, req, res, next) => {
-
-    console.error(err);
-
-    if (!res.headersSent) {
-
-        res.status(500).json({ message: 'Internal Server Error'});
-
-    };
-
-});
+app.use(errorHandler);
 
 // Server port
 const port = process.env.PORT || 3000;
