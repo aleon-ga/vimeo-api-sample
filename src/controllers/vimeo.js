@@ -6,6 +6,8 @@ const { VIMEO_PERSONAL_ACCESS_TOKEN } = process.env;
 
 const uploadTextTracks = async (req, res) => {
 
+    const failures = [], successes = [];
+
     try {
 
         const videos = req.body.videos || [];
@@ -18,12 +20,13 @@ const uploadTextTracks = async (req, res) => {
 
         };
 
-        for (const id of videos) {
+        await Promise.all(videos.map(async (video) => {
 
-            let url, options, response, data;
+            const { id, languages } = video;
 
-            // Step 1: get the URI of the text track
-            url = `${VIMEO_API_BASE_URL}/videos/${id}`;
+            let url, options, response;
+
+            url = `${VIMEO_API_BASE_URL}/videos/${id}/texttracks`;
 
             options = {
                 headers: {
@@ -32,81 +35,163 @@ const uploadTextTracks = async (req, res) => {
                 }
             };
 
+            //TODO: Step 1: get all the text tracks of a video.
             response = await nodeFetch(url, options);
 
             if (!response.ok) {
 
-                res.status(response.status).json({ message: "Failed to obtain the text track's URI." });
+                console.error(`Failed to retrieve all the text tracks of the video ${id}`);
+
+                failures.push(id);
 
                 return;
 
             };
 
-            data = await response.json();
+            const { data } = await response.json();
 
-            const textTrackUri = data.metadata.connections.texttracks.uri || '';
+            if (data.length === 0) {
+
+                console.error(`The video ${id} has no text tracks.`);
+
+                failures.push(id);
+
+                return;
+
+            };
+
+            const { link: captionsDownloadUrl, name: captionsName } = data.find(caption => caption.name === 'auto_generated_captions.vtt');
+
+            //TODO: Step 2: download the auto generated captions locally.
+            response = await nodeFetch(captionsDownloadUrl, options);
+
+            if (!response.ok) {
+
+                console.error(`Failed to download the auto generated captions file of the video ${id}`);
+
+                failures.push(id);
+
+                return;
+
+            };
+
+            const filePath = path.join(__dirname, '..', 'downloads', captionsName);
+
+            const stream = fs.createWriteStream(filePath);
+
+            response.body.pipe(stream);
+
+            // Promise to handle waiting until the file is downloaded or encounters an error before proceeding.
+            const streamPromise = new Promise((resolve) => {
+
+                stream.on('finish', () => {
+
+                    console.log(`Auto generated captions file of the video ${id} written successfully`);
+
+                    resolve(true);
+    
+                });
+    
+                stream.on('error', (error) => {
+    
+                    console.error(`Failed to write the auto generated captions file of the video ${id} locally`, error);
+
+                    resolve(false);
+                    
+                });
+
+            });
+
+            const isWriteStreamSuccess = await streamPromise;
+
+            if (!isWriteStreamSuccess) {
+
+                failures.push(id);
+
+                return;
+
+            } else {
+
+                successes.push(id); //! TEMPORAL
+
+            }
+
+            //*************************************************************************/
+            //************************** TRADUCCIONES *********************************/
+            //*************************************************************************/
+
+            // options = {
+            //     method: 'POST',
+            //     body: JSON.stringify({
+            //         type: 'captions',
+            //         language: 'es', //! DINÁMICO
+            //         name: 'español' //! DINÁMICO
+            //       }),
+            //     headers: {
+            //         Authorization: `Bearer ${VIMEO_PERSONAL_ACCESS_TOKEN}`,
+            //         'Content-Type': 'application/json',
+            //         Accept: 'application/vnd.vimeo.*+json;version=3.4'
+            //     }
+            // };
 
             /**
-             * Step 2: get the upload link for the text track.
+             * TODO: Step 3: get the upload link for the text track.
              * To get the upload link for the text track, you must first create the text track's resource, which is like a container to hold the track.
              */
-            url = `${VIMEO_API_BASE_URL}/${textTrackUri}`;
+            // response = await nodeFetch(url, options);
 
-            options = {
-                method: 'POST',
-                body: JSON.stringify({
-                    type: 'captions',
-                    language: 'es', //! DINÁMICO
-                    name: 'español' //! DINÁMICO
-                  }),
-                headers: {
-                    Authorization: `Bearer ${VIMEO_PERSONAL_ACCESS_TOKEN}`,
-                    'Content-Type': 'application/json',
-                    Accept: 'application/vnd.vimeo.*+json;version=3.4'
-                }
-            };
+            // if (!response.ok) {
 
-            response = await nodeFetch(url, options);
+            //     res.status(response.status).json({ message: "Failed to create the text track's resource." });
 
-            if (response.status !== 201) {
+            //     return;
 
-                res.status(response.status).json({ message: "Failed to create the text track's resource." });
+            // };
 
-                return;
-
-            };
-
-            data = await response.json();
-
-            const uploadLink = data.link || '';
+            // const { link } = await response.json();
 
             /**
-             * Step 3: upload the text track.
-             * To upload the text track, take the value of the link field from Step 2, and make a PUT request to this location.
+             * TODO: Step 4: upload the text track.
+             * To upload the text track, take the value of the link field from Step 3, and make a PUT request to this location.
              */
-            url = uploadLink;
+            // const filePath = path.join(__dirname, '..', 'downloads', 'auto_generated_captions.vtt');
 
-            const filePath = path.join(__dirname, '..', 'downloads', 'auto_generated_captions.vtt');
+            // const vttFileContent = fs.readFileSync(filePath, 'utf8');
 
-            const vttFileContent = fs.readFileSync(filePath, 'utf8');
+            // options = {
+            //     method: 'PUT',
+            //     body: vttFileContent,
+            //     headers: { Accept: 'application/vnd.vimeo.*+json;version=3.4' }
+            // };
 
-            options = {
-                method: 'PUT',
-                body: vttFileContent,
-                headers: { Accept: 'application/vnd.vimeo.*+json;version=3.4' }
-            };
+            // response = await nodeFetch(link, options);
 
-            response = await nodeFetch(url, options);
+            // if (response.status !== 200) {
 
-            if (response.status !== 200) {
+            //     res.status(response.status).json({ message: 'Failed to upload the text track.' });
 
-                res.status(response.status).json({ message: 'Failed to upload the text track.' });
+            //     return;
 
-                return;
+            // };
 
-            };
+            // res.status(response.status).json({ message: 'Text track upload successful.' });
 
-            res.status(response.status).json({ message: 'Text track upload successful.' });
+        }));
+
+        if (successes.length > 0 && failures.length === 0) {
+
+            res.status(200).json({ message: 'All videos have been successfully updated.' });
+
+        } else if (successes.length > 0 && failures.length > 0) {
+
+            res.status(200).json({
+                successes: successes.join(', '),
+                failures: failures.join(', ')
+            });
+
+        } else if (successes.length === 0 && failures.length > 0) {
+
+            throw new Error(`Failed to update all the videos.`);
 
         };
 
