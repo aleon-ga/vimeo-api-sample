@@ -14,7 +14,7 @@ app.use([
 ]);
 
 // Routes
-app.use('/api/v1', require('./src/routes/vimeo'));
+app.use('/api/v1', require('./src/routes'));
 
 // Default error handler
 app.use(errorHandler);
